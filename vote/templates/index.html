@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head><title>Voting App</title></head>
+<body style="font-family:sans-serif;text-align:center;padding:50px">
+  <h1>What is your favorite?</h1>
+  <form method="POST">
+    <button name="vote" value="cats" style="padding:20px 40px;font-size:20px;margin:10px">🐱 Cats</button>
+    <button name="vote" value="dogs" style="padding:20px 40px;font-size:20px;margin:10px">🐶 Dogs</button>
+  </form>
+  {% if vote %}
+    <p>You voted for: <strong>{{ vote }}</strong></p>
+  {% endif %}
+</body>
+</html>
