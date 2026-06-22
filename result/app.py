@@ -24,15 +24,15 @@ def get_results():
         rows = cur.fetchall()
     conn.close()
     results = {row[0]: row[1] for row in rows}
-    total = sum(results.values())
-    cats  = results.get('cats', 0)
-    dogs  = results.get('dogs', 0)
+    total     = sum(results.values())
+    alahly    = results.get('alahly', 0)
+    elzamalek = results.get('elzamalek', 0)
     return {
-        'cats': cats,
-        'dogs': dogs,
-        'cats_pct': round(cats / total * 100) if total else 0,
-        'dogs_pct': round(dogs / total * 100) if total else 0,
-        'total': total
+        'alahly':       alahly,
+        'elzamalek':    elzamalek,
+        'alahly_pct':   round(alahly    / total * 100) if total else 0,
+        'elzamalek_pct':round(elzamalek / total * 100) if total else 0,
+        'total':        total
     }
 
 @app.route('/')

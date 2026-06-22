@@ -1,28 +1,28 @@
 <!DOCTYPE html>
 <html>
-<head><title>Results</title></head>
-<body style="font-family:sans-serif;text-align:center;padding:50px">
-  <h1>Live Results</h1>
+<head><title>Derby Results</title></head>
+<body style="font-family:sans-serif;text-align:center;padding:50px;background:#f0f4f8">
+  <h1>🏆 Derby Results</h1>
   <p>Total votes: <strong id="total">0</strong></p>
-  <table style="margin:auto;font-size:20px;border-collapse:collapse">
+  <table style="margin:auto;font-size:22px;border-collapse:collapse">
     <tr>
-      <td style="padding:20px">🐱 Cats</td>
-      <td style="padding:20px"><strong id="cats">0</strong> (<span id="cats_pct">0</span>%)</td>
+      <td style="padding:20px">🔴 Al-Ahly</td>
+      <td style="padding:20px"><strong id="alahly">0</strong> (<span id="alahly_pct">0</span>%)</td>
     </tr>
     <tr>
-      <td style="padding:20px">🐶 Dogs</td>
-      <td style="padding:20px"><strong id="dogs">0</strong> (<span id="dogs_pct">0</span>%)</td>
+      <td style="padding:20px">⚪ El-Zamalek</td>
+      <td style="padding:20px"><strong id="elzamalek">0</strong> (<span id="elzamalek_pct">0</span>%)</td>
     </tr>
   </table>
   <script>
     const src = new EventSource('/stream');
     src.onmessage = e => {
       const d = JSON.parse(e.data);
-      document.getElementById('total').textContent    = d.total;
-      document.getElementById('cats').textContent     = d.cats;
-      document.getElementById('dogs').textContent     = d.dogs;
-      document.getElementById('cats_pct').textContent = d.cats_pct;
-      document.getElementById('dogs_pct').textContent = d.dogs_pct;
+      document.getElementById('total').textContent        = d.total;
+      document.getElementById('alahly').textContent       = d.alahly;
+      document.getElementById('elzamalek').textContent    = d.elzamalek;
+      document.getElementById('alahly_pct').textContent   = d.alahly_pct;
+      document.getElementById('elzamalek_pct').textContent = d.elzamalek_pct;
     };
   </script>
 </body>

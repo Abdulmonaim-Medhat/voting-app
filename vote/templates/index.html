@@ -1,14 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head><title>Voting App</title></head>
-<body style="font-family:sans-serif;text-align:center;padding:50px">
-  <h1>What is your favorite?</h1>
+<body style="font-family:sans-serif;text-align:center;padding:50px;background:#f0f4f8">
+  <h1>🗳️ Cast Your Vote</h1>
+  <p style="color:#666">Who will win the derby?</p>
   <form method="POST">
-    <button name="vote" value="cats" style="padding:20px 40px;font-size:20px;margin:10px">🐱 Cats</button>
-    <button name="vote" value="dogs" style="padding:20px 40px;font-size:20px;margin:10px">🐶 Dogs</button>
+    <button name="vote" value="alahly" style="padding:20px 40px;font-size:24px;margin:10px;border-radius:10px;border:none;background:#cc0000;color:white;cursor:pointer">🔴 Al-Ahly</button>
+    <button name="vote" value="elzamalek" style="padding:20px 40px;font-size:24px;margin:10px;border-radius:10px;border:none;background:#ffffff;color:#000080;border:3px solid #000080;cursor:pointer">⚪ El-Zamalek</button>
   </form>
   {% if vote %}
-    <p>You voted for: <strong>{{ vote }}</strong></p>
+    <p style="margin-top:20px;font-size:18px">You voted for: <strong>{{ vote }}</strong> ✅</p>
   {% endif %}
 </body>
 </html>
