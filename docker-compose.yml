@@ -1,0 +1,62 @@
+services:
+  redis:
+    image: redis:alpine
+    container_name: redis
+    networks:
+      - vote-app-net
+
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_USER: kareem
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: vote
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks:
+      - vote-app-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kareem -d vote"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  vote:
+    build: ./vote
+    container_name: vote
+    ports:
+      - "5000:5000"
+    depends_on:
+      - redis
+    networks:
+      - vote-app-net
+
+  worker:
+    build: ./worker
+    container_name: worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - vote-app-net
+
+  result:
+    build: ./result
+    container_name: result
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vote-app-net
+
+networks:
+  vote-app-net:
+    external: true
+
+volumes:
+  pg-data:
