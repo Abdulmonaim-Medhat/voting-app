@@ -1,11 +1,18 @@
 import redis
 import psycopg2
 import time
+import os
+
+REDIS_HOST    = os.environ.get('REDIS_HOST', 'redis')
+POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'postgres')
+POSTGRES_DB   = os.environ.get('POSTGRES_DB', 'vote')
+POSTGRES_USER = os.environ.get('POSTGRES_USER', 'kareem')
+POSTGRES_PASS = os.environ.get('POSTGRES_PASSWORD', 'secret')
 
 def get_redis():
     while True:
         try:
-            r = redis.Redis(host='redis', port=6379)
+            r = redis.Redis(host=REDIS_HOST, port=6379)
             r.ping()
             print("Connected to Redis")
             return r
@@ -17,10 +24,10 @@ def get_postgres():
     while True:
         try:
             conn = psycopg2.connect(
-                host='postgres',
-                database='vote',
-                user='kareem',
-                password='secret'
+                host=POSTGRES_HOST,
+                database=POSTGRES_DB,
+                user=POSTGRES_USER,
+                password=POSTGRES_PASS
             )
             print("Connected to PostgreSQL")
             return conn
@@ -32,8 +39,8 @@ def init_db(conn):
     with conn.cursor() as cur:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS votes (
-                voter_id VARCHAR(255) PRIMARY KEY,
-                vote     VARCHAR(255) NOT NULL,
+                voter_id   VARCHAR(255) PRIMARY KEY,
+                vote       VARCHAR(255) NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
@@ -52,7 +59,7 @@ def process_vote(conn, voter_id, vote):
     print(f"Recorded vote: {voter_id} -> {vote}")
 
 def main():
-    r = get_redis()
+    r    = get_redis()
     conn = get_postgres()
     init_db(conn)
 

@@ -1,9 +1,10 @@
 from flask import Flask, render_template, request, make_response
 import redis
 import uuid
+import os
 
 app = Flask(__name__)
-r = redis.Redis(host='redis', port=6379)
+r = redis.Redis(host=os.environ.get('REDIS_HOST', 'redis'), port=6379)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
