@@ -3,3 +3,8 @@ __pycache__/
 *.pyo
 .env
 *.log
+voting-app-infra/.terraform/
+voting-app-infra/*.tfstate
+voting-app-infra/*.tfstate.backup
+voting-app-infra/.terraform.lock.hcl
+voting-app-infra/ansible/vars.yml
