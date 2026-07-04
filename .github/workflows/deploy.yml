@@ -1,0 +1,100 @@
+name: Build and Deploy Locally
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    name: Build images and deploy containers
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build vote image
+        run: docker build -t vote-app ./vote
+
+      - name: Build worker image
+        run: docker build -t vote-worker ./worker
+
+      - name: Build result image
+        run: docker build -t vote-result ./result
+
+      - name: Create network
+        run: docker network create vote-app-net || true
+
+      - name: Deploy Redis
+        run: |
+          docker rm -f redis || true
+          docker run -d \
+            --name redis \
+            --network vote-app-net \
+            --restart unless-stopped \
+            -p 6379:6379 \
+            redis:alpine
+
+      - name: Deploy PostgreSQL
+        run: |
+          docker rm -f postgres || true
+          docker run -d \
+            --name postgres \
+            --network vote-app-net \
+            --restart unless-stopped \
+            -p 5432:5432 \
+            -e POSTGRES_USER=kareem \
+            -e POSTGRES_PASSWORD=secret \
+            -e POSTGRES_DB=vote \
+            -v pg-data:/var/lib/postgresql/data \
+            postgres:16
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..10}; do
+            docker exec postgres pg_isready -U kareem -d vote && break
+            echo "Waiting for postgres..."
+            sleep 3
+          done
+
+      - name: Deploy Worker
+        run: |
+          docker rm -f worker || true
+          docker run -d \
+            --name worker \
+            --network vote-app-net \
+            --restart unless-stopped \
+            -e REDIS_HOST=redis \
+            -e POSTGRES_HOST=postgres \
+            -e POSTGRES_DB=vote \
+            -e POSTGRES_USER=kareem \
+            -e POSTGRES_PASSWORD=secret \
+            vote-worker
+
+      - name: Deploy Vote app
+        run: |
+          docker rm -f vote || true
+          docker run -d \
+            --name vote \
+            --network vote-app-net \
+            --restart unless-stopped \
+            -p 5000:5000 \
+            -e REDIS_HOST=redis \
+            vote-app
+
+      - name: Deploy Result app
+        run: |
+          docker rm -f result || true
+          docker run -d \
+            --name result \
+            --network vote-app-net \
+            --restart unless-stopped \
+            -p 3000:3000 \
+            -e POSTGRES_HOST=postgres \
+            -e POSTGRES_DB=vote \
+            -e POSTGRES_USER=kareem \
+            -e POSTGRES_PASSWORD=secret \
+            vote-result
+
+      - name: Verify deployment
+        run: docker ps --format "table {{.Names}}\t{{.Status}}"
