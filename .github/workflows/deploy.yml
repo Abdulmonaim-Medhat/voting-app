@@ -35,8 +35,11 @@ jobs:
             -p 6379:6379 \
             redis:alpine
 
-      - name: Deploy PostgreSQL
+      - name: Deploy PostgreSQL (fresh volume on first run only)
         run: |
+          if [ "$(docker volume ls -q -f name=pg-data)" == "" ]; then
+            echo "No existing volume, creating fresh"
+          fi
           docker rm -f postgres || true
           docker run -d \
             --name postgres \
@@ -56,6 +59,12 @@ jobs:
             echo "Waiting for postgres..."
             sleep 3
           done
+
+      - name: Ensure vote database exists
+        run: |
+          docker exec postgres psql -U kareem -d postgres -tc \
+            "SELECT 1 FROM pg_database WHERE datname = 'vote'" | grep -q 1 || \
+            docker exec postgres psql -U kareem -d postgres -c "CREATE DATABASE vote"
 
       - name: Deploy Worker
         run: |
