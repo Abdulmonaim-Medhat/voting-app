@@ -92,4 +92,4 @@ A few real debugging sessions worth mentioning, since they're as valuable as the
 
 ---
 
-*Built by Kareem — network/infrastructure engineer transitioning into DevOps/SRE.*
+*Built by Kareem — DevOps/SRE.*
