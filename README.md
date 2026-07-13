@@ -163,6 +163,9 @@ ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
 
 ---
 
+<<<<<<< HEAD
+*Built by Kareem — DevOps/SRE.*
+=======
 ## 🐛 Lessons Learned
 
 > Real debugging sessions worth documenting — they taught more than the tutorial parts ever could.
@@ -180,3 +183,4 @@ Built by Kareem —  into DevOps/SRE 🚀
 
 
 </div>
+>>>>>>> 8352c55 (make README more visual with badges and better formatting)
