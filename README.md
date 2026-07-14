@@ -183,4 +183,3 @@ Built by Kareem —  into DevOps/SRE 🚀
 
 
 </div>
->>>>>>> 8352c55 (make README more visual with badges and better formatting)
