@@ -163,7 +163,6 @@ ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
 
 ---
 
-<<<<<<< HEAD
 *Built by Kareem — DevOps/SRE.*
 =======
 ## 🐛 Lessons Learned
