@@ -9,6 +9,7 @@
 [![Ansible](https://img.shields.io/badge/Ansible-EE0000?style=for-the-badge&logo=ansible&logoColor=white)](https://www.ansible.com/)
 [![AWS](https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&logo=amazon-aws&logoColor=white)](https://aws.amazon.com/)
 [![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)](https://github.com/features/actions)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
@@ -31,6 +32,7 @@
 - [🚀 Project Evolution](#-project-evolution)
 - [▶️ Running Locally](#️-running-locally)
 - [☁️ Running on AWS](#️-running-on-aws)
+- [☸️ Running on Kubernetes](#️-running-on-kubernetes)
 - [🗺️ Roadmap](#️-roadmap)
 - [🐛 Lessons Learned](#-lessons-learned)
 
@@ -91,8 +93,9 @@
 | 🔁 **CI/CD** | GitHub Actions (self-hosted runner) |
 | 🏗️ **Infrastructure as Code** | Terraform (AWS VPC, EC2, IAM, budgets) |
 | ⚙️ **Config Management** | Ansible |
-| 📮 **Container Registry** | Amazon ECR |
+| 📮 **Container Registry** | Amazon ECR · Docker Hub |
 | ☁️ **Cloud** | AWS (EC2 free tier, IAM, CloudWatch, Budgets) |
+| ☸️ **Orchestration** | Kubernetes — 3-node bare-metal `kubeadm` cluster |
 
 </div>
 
@@ -127,6 +130,13 @@ This project was built in stages — each one layering in a real piece of the mo
 7. **💰 Cost control**
    AWS Budgets + SNS alerts at 80%/100% actual and forecasted spend — the entire project stays inside free tier
 
+8. **☸️ Kubernetes**
+   Migrated the app onto a real 3-node bare-metal cluster built with `kubeadm` — 1 Fedora control-plane node + 2 Ubuntu worker nodes, all on separate VMs with static IPs:
+   - **Deployments** for every service (redis, postgres, worker, vote ×2 replicas, result), replacing manual `docker run`/Ansible deployment
+   - **Services** — `ClusterIP` for internal-only components (redis, postgres) and `NodePort` for external access (vote, result) — Kubernetes' built-in DNS replaced the private-IP wiring that AWS/Ansible required
+   - **Secrets** for DB credentials, created imperatively (`kubectl create secret`) so nothing sensitive ever touches a file on disk or Git history
+   - **PersistentVolume + PersistentVolumeClaim** (`hostPath`, pinned to a worker node via `nodeAffinity`) so PostgreSQL data survives pod restarts — verified by deleting the pod mid-test and confirming votes were still there after
+
 ---
 
 ## ▶️ Running Locally
@@ -155,16 +165,41 @@ ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
 
 ---
 
-## 🗺️ Roadmap
+## ☸️ Running on Kubernetes
 
-- [ ] ☸️ **Kubernetes** — migrate from EC2 + Ansible → Minikube locally, then Amazon EKS
-- [ ] 📈 **Monitoring** — Prometheus + Grafana for metrics, dashboards, and alerting
-- [ ] 🔄 **GitOps** — explore a Kubernetes-native deployment flow
+A real 3-node cluster — no Minikube abstraction — built with `kubeadm`:
+
+| Node | OS | Role |
+|---|---|---|
+| master | Fedora | control-plane |
+| worker1 | Ubuntu 26.04 | worker |
+| worker2 | Ubuntu 26.04 | worker |
+
+```bash
+kubectl apply -f infra/k8s/postgres-storage.yaml   # PV + PVC first
+kubectl create secret generic postgres-secret \
+  --from-literal=POSTGRES_USER=kareem \
+  --from-literal=POSTGRES_PASSWORD=secret \
+  --from-literal=POSTGRES_DB=vote
+kubectl apply -f infra/k8s/voting-app-k8s.yaml
+```
+
+| Service | URL |
+|---|---|
+| 🗳️ Vote | http://\<any-node-ip\>:30000 |
+| 📊 Results | http://\<any-node-ip\>:30001 |
 
 ---
 
-*Built by Kareem — DevOps/SRE.*
-=======
+## 🗺️ Roadmap
+
+- [x] ☸️ **Kubernetes** — 3-node bare-metal `kubeadm` cluster, Deployments/Services/Secrets/PersistentVolumes
+- [ ] 📈 **Monitoring** — Prometheus + Grafana for metrics, dashboards, and alerting
+- [ ] 🔄 **GitOps** — explore a Kubernetes-native deployment flow
+- [ ] 🔐 **Security hardening** — replace `hostPath` 777 permissions, move secrets to an external manager, re-enable SELinux enforcing on worker nodes
+
+---
+
 ## 🐛 Lessons Learned
 
 > Real debugging sessions worth documenting — they taught more than the tutorial parts ever could.
@@ -173,12 +208,17 @@ ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
 - 🕳️ **The "blackhole route" bug.** Default AWS VPCs don't always ship with subnets or an internet gateway. Letting Terraform *reference* an existing route table (instead of owning the full networking stack) caused routes to silently point at deleted gateways after repeated destroy/apply cycles. Fix: Terraform creates and owns its *own* route table end-to-end.
 - 🔑 **No implicit AWS credentials in Docker.** EC2 instances need an IAM instance profile to pull from ECR — the Docker CLI won't magically find credentials otherwise.
 - 🧮 **Free tier vCPU limits are real.** Free tier accounts default to a 1 vCPU limit, capping how many `t2.micro` instances can run concurrently.
+- 🌐 **Missing CNI plugin binaries silently break cluster DNS.** Flannel's own binary isn't enough — the standard CNI plugin suite (`loopback`, `bridge`, `host-local`, etc.) has to be installed separately in `/opt/cni/bin`, or CoreDNS pods hang forever in `ContainerCreating`.
+- 🔢 **Kubernetes version skew matters — a lot.** A kubelet running 5 minor versions ahead of the control plane (caused by a Linux distro's *native* Kubernetes package silently taking priority over the pinned upstream repo) produces confusing, unrelated-looking crash loops. Always verify `kubelet --version` matches the control plane exactly on every node.
+- 📝 **`kubectl apply` fails silently on malformed multi-document YAML.** A missing `---` separator between two resources merges them into one invalid document — `kubectl apply` just skips it without erroring, so always check the apply output lists every expected resource, not just that the command exited cleanly.
+- 🖨️ **Python's stdout buffering hides container logs.** Without `ENV PYTHONUNBUFFERED=1` in the Dockerfile, a perfectly healthy Python process can show zero `kubectl logs` output for the container's entire lifetime.
 
 ---
 
 <div align="center">
- 
-Built by Kareem —  into DevOps/SRE 🚀
 
+**Built by Kareem** — network/infrastructure engineer transitioning into DevOps/SRE 🚀
+
+*From Huawei datacenter fabrics to Terraform state files.*
 
 </div>
