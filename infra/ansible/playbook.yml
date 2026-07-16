@@ -1,0 +1,159 @@
+---
+# ============================================================
+# Play 1 - Install Docker on all VMs
+# ============================================================
+- name: Install Docker
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install dependencies
+      apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - awscli
+        state: present
+
+    - name: Add Docker GPG key
+      shell: |
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        chmod a+r /etc/apt/keyrings/docker.asc
+
+    - name: Add Docker repository
+      shell: |
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] \
+        https://download.docker.com/linux/ubuntu \
+        $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+
+    - name: Update apt after adding Docker repo
+      apt:
+        update_cache: yes
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+
+    - name: Start and enable Docker
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add ubuntu user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Authenticate Docker to ECR
+      shell: |
+        aws ecr get-login-password --region us-east-1 | \
+        docker login --username AWS --password-stdin \
+        034362069931.dkr.ecr.us-east-1.amazonaws.com
+
+# ============================================================
+# Play 2 - Deploy data tier (Redis + PostgreSQL + Worker)
+# ============================================================
+- name: Deploy data tier
+  hosts: data
+  become: true
+
+  tasks:
+    - name: Create app network
+      shell: docker network create vote-app-net || true
+
+    - name: Run Redis
+      shell: |
+        docker rm -f redis || true
+        docker run -d \
+          --name redis \
+          --network vote-app-net \
+          --restart unless-stopped \
+          -p 6379:6379 \
+          redis:alpine
+
+    - name: Run PostgreSQL
+      shell: |
+        docker rm -f postgres || true
+        docker run -d \
+          --name postgres \
+          --network vote-app-net \
+          --restart unless-stopped \
+          -p 5432:5432 \
+          -e POSTGRES_USER=kareem \
+          -e POSTGRES_PASSWORD=secret \
+          -e POSTGRES_DB=vote \
+          -v pg-data:/var/lib/postgresql/data \
+          postgres:16
+
+    - name: Wait for PostgreSQL to be ready
+      shell: |
+        until docker exec postgres pg_isready -U kareem -d vote; do
+          echo "Waiting for postgres..."
+          sleep 2
+        done
+      retries: 10
+      delay: 5
+
+    - name: Run Worker
+      shell: |
+        docker rm -f worker || true
+        docker run -d \
+          --name worker \
+          --network vote-app-net \
+          --restart unless-stopped \
+          -e REDIS_HOST=redis \
+          -e POSTGRES_HOST=postgres \
+          -e POSTGRES_DB=vote \
+          -e POSTGRES_USER=kareem \
+          -e POSTGRES_PASSWORD=secret \
+          034362069931.dkr.ecr.us-east-1.amazonaws.com/voting-app/worker:latest
+
+# ============================================================
+# Play 3 - Deploy web tier (Vote app + Result app)
+# ============================================================
+- name: Deploy web tier
+  hosts: web
+  become: true
+
+  vars:
+    data_private_ip: "172.31.8.26"
+
+  tasks:
+    - name: Create app network
+      shell: docker network create vote-app-net || true
+
+    - name: Run Vote app
+      shell: |
+        docker rm -f vote || true
+        docker run -d \
+          --name vote \
+          --restart unless-stopped \
+          -p 5000:5000 \
+          -e REDIS_HOST={{ data_private_ip }} \
+          034362069931.dkr.ecr.us-east-1.amazonaws.com/voting-app/vote:latest
+
+    - name: Run Result app
+      shell: |
+        docker rm -f result || true
+        docker run -d \
+          --name result \
+          --restart unless-stopped \
+          -p 3000:3000 \
+          -e POSTGRES_HOST={{ data_private_ip }} \
+          -e POSTGRES_DB=vote \
+          -e POSTGRES_USER=kareem \
+          -e POSTGRES_PASSWORD=secret \
+          034362069931.dkr.ecr.us-east-1.amazonaws.com/voting-app/result:latest
