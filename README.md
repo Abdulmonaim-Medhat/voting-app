@@ -10,6 +10,8 @@
 [![AWS](https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&logo=amazon-aws&logoColor=white)](https://aws.amazon.com/)
 [![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)](https://github.com/features/actions)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white)](https://kubernetes.io/)
+[![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white)](https://prometheus.io/)
+[![Grafana](https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white)](https://grafana.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 [![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
@@ -33,6 +35,7 @@
 - [▶️ Running Locally](#️-running-locally)
 - [☁️ Running on AWS](#️-running-on-aws)
 - [☸️ Running on Kubernetes](#️-running-on-kubernetes)
+- [📈 Monitoring](#-monitoring)
 - [🗺️ Roadmap](#️-roadmap)
 - [🐛 Lessons Learned](#-lessons-learned)
 
@@ -96,6 +99,7 @@
 | 📮 **Container Registry** | Amazon ECR · Docker Hub |
 | ☁️ **Cloud** | AWS (EC2 free tier, IAM, CloudWatch, Budgets) |
 | ☸️ **Orchestration** | Kubernetes — 3-node bare-metal `kubeadm` cluster |
+| 📈 **Monitoring** | Prometheus · Grafana · node-exporter |
 
 </div>
 
@@ -136,6 +140,13 @@ This project was built in stages — each one layering in a real piece of the mo
    - **Services** — `ClusterIP` for internal-only components (redis, postgres) and `NodePort` for external access (vote, result) — Kubernetes' built-in DNS replaced the private-IP wiring that AWS/Ansible required
    - **Secrets** for DB credentials, created imperatively (`kubectl create secret`) so nothing sensitive ever touches a file on disk or Git history
    - **PersistentVolume + PersistentVolumeClaim** (`hostPath`, pinned to a worker node via `nodeAffinity`) so PostgreSQL data survives pod restarts — verified by deleting the pod mid-test and confirming votes were still there after
+
+9. **📈 Monitoring**
+   Deployed Prometheus + Grafana into their own `monitoring` namespace on the same cluster:
+   - **RBAC** (ServiceAccount + ClusterRole + ClusterRoleBinding) so Prometheus can query the Kubernetes API for service discovery — least-privilege, read-only
+   - **Prometheus** scrapes the API server, kubelet on all 3 nodes, and a **node-exporter DaemonSet** (one pod per node, `hostNetwork`/`hostPID`) for real OS-level CPU/memory/disk metrics
+   - **Grafana** as the visualization layer, connected to Prometheus as a data source over Kubernetes' internal DNS
+   - Debugged a genuine cross-node networking failure — see [Lessons Learned](#-lessons-learned) — traced via `tcpdump` down to a Fedora firewalld zone silently dropping VXLAN-forwarded pod traffic
 
 ---
 
@@ -191,10 +202,38 @@ kubectl apply -f infra/k8s/voting-app-k8s.yaml
 
 ---
 
+## 📈 Monitoring
+
+Prometheus + Grafana run in their own `monitoring` namespace on the same 3-node cluster:
+
+```bash
+kubectl create namespace monitoring
+kubectl apply -f infra/k8s/prometheus-rbac.yaml
+kubectl apply -f infra/k8s/prometheus-config.yaml
+kubectl apply -f infra/k8s/prometheus-deployment.yaml
+kubectl apply -f infra/k8s/node-exporter.yaml
+kubectl apply -f infra/k8s/grafana-deployment.yaml
+```
+
+| Service | URL |
+|---|---|
+| 📊 Prometheus | http://\<any-node-ip\>:30090 |
+| 📈 Grafana | http://\<any-node-ip\>:30030 |
+
+**What's collected:**
+- Kubernetes API server health
+- Per-node kubelet/cAdvisor metrics (all 3 nodes)
+- Real OS-level metrics via a **node-exporter DaemonSet** — one pod per node
+
+**Next:** Thanos sidecar for long-term metric storage, starting with a local filesystem object-store backend before optionally moving to S3.
+
+---
+
 ## 🗺️ Roadmap
 
 - [x] ☸️ **Kubernetes** — 3-node bare-metal `kubeadm` cluster, Deployments/Services/Secrets/PersistentVolumes
-- [ ] 📈 **Monitoring** — Prometheus + Grafana for metrics, dashboards, and alerting
+- [x] 📈 **Monitoring** — Prometheus + Grafana + node-exporter DaemonSet
+- [ ] 🗄️ **Thanos** — long-term metric storage, starting with local filesystem backend before S3
 - [ ] 🔄 **GitOps** — explore a Kubernetes-native deployment flow
 - [ ] 🔐 **Security hardening** — replace `hostPath` 777 permissions, move secrets to an external manager, re-enable SELinux enforcing on worker nodes
 
@@ -212,6 +251,10 @@ kubectl apply -f infra/k8s/voting-app-k8s.yaml
 - 🔢 **Kubernetes version skew matters — a lot.** A kubelet running 5 minor versions ahead of the control plane (caused by a Linux distro's *native* Kubernetes package silently taking priority over the pinned upstream repo) produces confusing, unrelated-looking crash loops. Always verify `kubelet --version` matches the control plane exactly on every node.
 - 📝 **`kubectl apply` fails silently on malformed multi-document YAML.** A missing `---` separator between two resources merges them into one invalid document — `kubectl apply` just skips it without erroring, so always check the apply output lists every expected resource, not just that the command exited cleanly.
 - 🖨️ **Python's stdout buffering hides container logs.** Without `ENV PYTHONUNBUFFERED=1` in the Dockerfile, a perfectly healthy Python process can show zero `kubectl logs` output for the container's entire lifetime.
+- 🚧 **Taints repel, tolerations permit — a `nodeSelector` alone isn't enough.** The control-plane node's default `NoSchedule` taint kept blocking a `nodeSelector`-targeted Prometheus pod until a matching `toleration` was added.
+- 🔥 **A cross-node VXLAN packet can arrive and still get dropped.** Grafana couldn't reach Prometheus across nodes despite correct routes and a healthy Flannel overlay — `tcpdump` on the receiving node showed the packet arriving via VXLAN and then being rejected by the node's own firewalld zone (`admin prohibited filter`), since Fedora's default `FedoraWorkstation` zone wasn't written with Kubernetes pod networking in mind. Fixed by adding the `cni0`/`flannel.1` interfaces to a `trusted` firewalld zone.
+
+📋 **Full troubleshooting log:** every issue above, plus several smaller ones (AWS, CI/CD, Git), is documented in detail in [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
 
 ---
 
